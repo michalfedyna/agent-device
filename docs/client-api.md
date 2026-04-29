@@ -16,6 +16,14 @@ Public subpath API exposed for Node consumers:
   - `buildIosRuntimeHints(baseUrl)`
   - `buildAndroidRuntimeHints(baseUrl)`
   - types: `PrepareRemoteMetroOptions`, `PrepareRemoteMetroResult`, `EnsureMetroTunnelOptions`, `EnsureMetroTunnelResult`, `ReloadRemoteMetroOptions`, `ReloadRemoteMetroResult`, `StopMetroTunnelOptions`, `MetroRuntimeHints`, `MetroBridgeResult`
+- `agent-device/batch`
+  - `runBatch(req, sessionName, invoke)`
+  - `validateAndNormalizeBatchSteps(steps, maxSteps)`
+  - `buildBatchStepFlags(parentFlags, stepFlags)`
+  - `DEFAULT_BATCH_MAX_STEPS`
+  - `BATCH_BLOCKED_COMMANDS`
+  - `INHERITED_PARENT_FLAG_KEYS`
+  - types: `BatchInvoke`, `BatchRequest`, `BatchStep`, `BatchStepResult`, `NormalizedBatchStep`
 - `agent-device/remote-config`
   - `resolveRemoteConfigPath(options)`
   - `resolveRemoteConfigProfile(options)`
@@ -48,8 +56,16 @@ Public subpath API exposed for Node consumers:
   - types: `MaterializeInstallSource`, `MaterializedInstallable`
 - `agent-device/artifacts`
   - `resolveAndroidArchivePackageName(archivePath)`
+- `agent-device/android-snapshot-helper`
+  - `ensureAndroidSnapshotHelper(options)`
+  - `captureAndroidSnapshotWithHelper(options)`
+  - `parseAndroidSnapshotHelperOutput(output)`
+  - `parseAndroidSnapshotHelperXml(xml, metadata?, options?, maxNodes?)`
+  - `prepareAndroidSnapshotHelperArtifactFromManifestUrl(options)`
+  - `verifyAndroidSnapshotHelperArtifact(artifact)`
+  - types: `AndroidAdbExecutor`, `AndroidSnapshotHelperArtifact`, `AndroidSnapshotHelperManifest`, `AndroidSnapshotHelperOutput`, `AndroidSnapshotHelperParsedSnapshot`
 
-The `contracts`, `selectors`, `finders`, `install-source`, `android-apps`, `artifacts`, `metro`, `remote-config`, and `io` subpaths remain available for compatibility. The former hosted-runtime subpaths `agent-device/commands`, `agent-device/backend`, `agent-device/testing/conformance`, and `agent-device/observability` are no longer published.
+The `contracts`, `selectors`, `finders`, `install-source`, `android-apps`, `artifacts`, `batch`, `metro`, `remote-config`, and `io` subpaths remain available for compatibility. The former hosted-runtime subpaths `agent-device/commands`, `agent-device/backend`, `agent-device/testing/conformance`, and `agent-device/observability` are no longer published.
 
 ## Basic usage
 
@@ -83,6 +99,43 @@ const snapshot = await client.capture.snapshot({ interactiveOnly: true });
 
 await client.sessions.close();
 ```
+
+## Android snapshot helper providers
+
+Remote Android providers should import `agent-device/android-snapshot-helper` and inject their own
+ADB-shaped executor. The executor receives arguments after `adb`, so local callers may wrap
+`adb -s <serial>`, while cloud providers can route the same operations through an ADB tunnel.
+
+```ts
+import {
+  captureAndroidSnapshotWithHelper,
+  ensureAndroidSnapshotHelper,
+  parseAndroidSnapshotHelperXml,
+  prepareAndroidSnapshotHelperArtifactFromManifestUrl,
+} from 'agent-device/android-snapshot-helper';
+
+const artifact = await prepareAndroidSnapshotHelperArtifactFromManifestUrl({
+  manifestUrl:
+    'https://github.com/callstackincubator/agent-device/releases/download/v0.13.3/agent-device-android-snapshot-helper-0.13.3.manifest.json',
+});
+
+await ensureAndroidSnapshotHelper({
+  adb: runProviderAdb,
+  artifact,
+  installPolicy: 'missing-or-outdated',
+});
+
+const output = await captureAndroidSnapshotWithHelper({
+  adb: runProviderAdb,
+  timeoutMs: 8000,
+});
+
+const snapshot = parseAndroidSnapshotHelperXml(output.xml, output.metadata);
+```
+
+Helper captures report `metadata.captureMode` as `interactive-windows` when Android returns
+interactive window roots, or `active-window` when the helper falls back to
+`getRootInActiveWindow()`. `metadata.windowCount` is the number of serialized roots.
 
 ## Command methods
 
@@ -138,6 +191,26 @@ Additional CLI-backed methods are exposed on their domain groups with typed opti
 - `client.settings.update()`
 
 `client.recording.record({ action: 'start', path, quality: 5 })` starts a smaller 50% resolution video; omit `quality` to keep native/current resolution.
+
+## Batch orchestration for custom transports
+
+Use `agent-device/batch` when a bridge or in-process runner receives daemon-shaped requests but owns command dispatch itself. The helper keeps validation, inherited flags, serial execution, partial results, and error envelopes aligned with the daemon batch command.
+
+```ts
+import { runBatch } from 'agent-device/batch';
+import type { BatchRequest } from 'agent-device/batch';
+import type { DaemonResponse } from 'agent-device/contracts';
+
+async function handleBatch(req: BatchRequest): Promise<DaemonResponse> {
+  return await runBatch(req, req.session ?? 'default', async (stepReq) => {
+    try {
+      return { ok: true, data: await dispatch(stepReq) };
+    } catch (error) {
+      return bridgeErrorToDaemonResponse(error);
+    }
+  });
+}
+```
 
 ## Android `installFromSource()`
 

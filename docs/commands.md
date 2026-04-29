@@ -4,6 +4,20 @@ This page summarizes the primary command groups.
 
 For persistent defaults and project-scoped CLI settings, see [Configuration](/agent-device/docs/configuration.md).
 
+For agent workflow guidance that is matched to the installed CLI, run:
+
+```bash
+agent-device help
+agent-device help workflow
+agent-device help debugging
+agent-device help react-devtools
+agent-device help remote
+agent-device help macos
+agent-device help dogfood
+```
+
+Skills are recommended for auto-routing when your agent runtime supports them, but they are not required. The CLI help topics are the version-matched operating contract.
+
 ## Navigation
 
 ```bash
@@ -50,7 +64,7 @@ agent-device app-switcher
 - Tenant-scoped daemon runs can pass `--tenant`, `--session-isolation tenant`, `--run-id`, and `--lease-id` to enforce lease admission.
 - Remote daemon clients can pass `--daemon-base-url http(s)://host:port[/base-path]` to skip local daemon discovery/startup and call a remote HTTP daemon directly.
 - Use `--daemon-auth-token <token>` (or `AGENT_DEVICE_DAEMON_AUTH_TOKEN`) for explicit service/API-token automation against non-loopback remote daemon URLs; the client sends it in both the JSON-RPC request token and HTTP auth headers.
-- For human cloud access, `connect --remote-config ...` refreshes a stored CLI session into a short-lived `adc_agent_...` token. If no CLI session exists, interactive shells start login automatically; CI and non-interactive shells fail with API-token setup instructions. Use `--no-login` to disable implicit login.
+- For human cloud access, `connect --remote-config ...` refreshes a stored CLI session into a short-lived `adc_agent_...` token. If no CLI session exists, interactive shells start login automatically; CI and non-interactive shells fail with API-token setup instructions. Use `--no-login` to disable implicit login. `AGENT_DEVICE_CLOUD_BASE_URL` is the bridge/control-plane API origin; its `/api-keys` route may redirect to the dashboard for token creation.
 - For remote `connect --remote-config` flows, see [Remote Metro workflow](#remote-metro-workflow).
 - Android React Native relaunch flows require an installed package name for `open --relaunch`; install/reinstall the APK first, then relaunch by package. `open <apk|aab> --relaunch` is rejected because runtime hints are written through the installed app sandbox.
 - For Metro-backed React Native JS changes, use `metro reload` before `open <app> --relaunch`; it mirrors pressing `r` in the Metro terminal and keeps the native process alive.
@@ -192,6 +206,13 @@ agent-device get attrs @e1
 ```
 
 - iOS snapshots use XCTest on simulators and physical devices.
+- Android snapshots use the bundled Android snapshot helper when the npm package includes it. The
+  first helper-backed snapshot verifies and installs the helper APK if it is missing or outdated;
+  helper failures fall back to stock UIAutomator and include `androidSnapshot.fallbackReason` in
+  typed results. Source checkouts without a bundled helper use stock UIAutomator. The helper
+  serializes Android interactive window roots when available, so keyboard and system-overlay nodes
+  can appear alongside the app root; `androidSnapshot.captureMode` and
+  `androidSnapshot.windowCount` describe the capture.
 - `diff snapshot` compares the current snapshot with the previous session baseline and then updates baseline.
 - `snapshot --diff` is an alias for `diff snapshot`.
 
@@ -509,11 +530,12 @@ agent-device keyboard dismiss
 ```
 
 - `keyboard status` (or `keyboard get`) returns keyboard visibility and best-effort input type classification on Android.
-- `keyboard dismiss` attempts a non-navigation keyboard dismissal on Android and a native dismiss gesture/control on iOS, then confirms the keyboard is hidden.
+- `keyboard dismiss` attempts a non-navigation keyboard dismissal on Android and a native dismiss gesture/control on iOS, including common safe controls such as a keyboard toolbar `Done` button, then confirms the keyboard is hidden.
 - If the keyboard remains visible after the platform-native dismiss path, the command returns an explicit `UNSUPPORTED_OPERATION` error instead of falling back to back navigation.
+- On iOS, `keyboard dismiss` is best-effort and can fail when the active app exposes no native dismiss gesture/control. Prefer a visible app dismiss control, or use `back --system` only when system navigation is an acceptable side effect.
 - Works with active sessions and explicit selectors (`--platform`, `--device`, `--udid`, `--serial`).
 - `keyboard status|get` is supported on Android emulator/device.
-- `keyboard dismiss` is supported on Android emulator/device and iOS simulator/device.
+- `keyboard dismiss` is supported on Android emulator/device and best-effort on iOS simulator/device.
 
 ## Performance metrics
 
@@ -728,8 +750,9 @@ agent-device disconnect --remote-config ./agent-device.remote.json
 - `connect --remote-config ...` is the main agent flow. It generates a local session name when needed, authenticates to cloud when credentials are missing, stores the remote scope locally, and defers tenant lease allocation plus Metro preparation until a later command needs them.
 - Auth management commands are available for inspection and recovery: `agent-device auth status`, `agent-device auth login`, and `agent-device auth logout`. Human login stores a revocable CLI session locally; it does not create or persist an `adc_live_...` service token.
 - Cloud auth uses three credential classes: `adc_agent_...` short-lived command tokens, revocable CLI session refresh credentials, and explicit `adc_live_...` service/API tokens for CI. The CLI implements credential selection, CI refusal, local storage permissions, logout, and output redaction; the cloud API must enforce token expiry, tenant/run scope, revocation, one-time device approval, polling rate limits, and dashboard/API separation.
+- `AGENT_DEVICE_CLOUD_BASE_URL` should point at the bridge/control-plane API origin, not necessarily the dashboard origin. API-token setup links use `/api-keys` on that origin so the bridge can redirect users to the right dashboard page.
 - Deferred Metro preparation also applies to `batch` when any step opens an app and the batch does not provide its own per-step runtime.
-- After `connect`, `snapshot`, `press`, `fill`, `screenshot`, and other normal commands reuse active connection state so agents do not repeat remote host/session/lease selectors inline. Passing the same `--remote-config` to a normal command is also supported for self-contained scripts; the CLI reuses matching saved state or creates it before dispatch.
+- After `connect`, `install-from-source`, `open`, `snapshot`, `devices`, `press`, `fill`, `screenshot`, and other normal commands reuse active connection state so agents do not repeat remote host/session/lease selectors inline. If `connection status` shows `leaseId=pending`, the first platform-bound command allocates or refreshes the lease. Passing the same `--remote-config` to a normal command is also supported for self-contained scripts; the CLI reuses matching saved state or creates it before dispatch.
 - Self-contained remote scripts should end with `disconnect --remote-config <path>` or `disconnect` to release the lease and stop the owned Metro companion.
 - Explicit command-line flags override connected defaults. When `open` uses explicit remote daemon or tenant flags without saved runtime hints, the CLI warns because React Native apps may launch without Metro bundle/runtime hints.
 - `metroProxyBaseUrl` is the bridge origin. Do not prebuild `/api/metro/...` paths in the client profile; the CLI calls the bridge endpoints itself.

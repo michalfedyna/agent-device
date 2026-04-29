@@ -9,8 +9,7 @@
 - Performance snapshots with `perf`/`metrics`, including CPU and memory data where supported
 
 If you know `agent-browser`, this is the mobile-native counterpart for iOS/Android UI automation and app-level observability.
-For exploratory QA and bug-hunting workflows, see `skills/dogfood/SKILL.md` in this repository.
-For React Native component trees, props/state/hooks, and render profiling, use `agent-device react-devtools`, which dynamically runs pinned `agent-react-devtools` commands.
+For agent-oriented operating guidance, start with `agent-device help` or `agent-device help workflow`. Skills are recommended auto-routing helpers when your agent runtime supports them, but agents can operate from CLI help alone. For exploratory QA, use `agent-device help dogfood`. For React Native component trees, props/state/hooks, and render profiling, use `agent-device help react-devtools` and the `agent-device react-devtools` passthrough.
 
 ## What it’s good at
 
@@ -33,7 +32,7 @@ For React Native component trees, props/state/hooks, and render profiling, use `
   - Physical-device recording defaults to 15 FPS and supports `--fps` caps.
   - `record start --quality <5-10>` scales recording resolution from 50% through native resolution; omitting it keeps native/current resolution.
 - Android supports the same core interaction set, plus `rotate`, `push` notification simulation, `clipboard read/write`, and `keyboard status|get|dismiss`.
-- iOS supports `keyboard dismiss` through the XCTest runner when the on-screen keyboard is visible.
+- iOS `keyboard dismiss` is best-effort through the XCTest runner, including common native controls such as keyboard toolbar `Done`, and can fail when the app exposes no native dismiss gesture/control.
 - App-event triggers are available on iOS and Android through app-defined deep-link hooks (`trigger-app-event`), using active session context or explicit device selectors.
 
 ## Architecture (high level)
